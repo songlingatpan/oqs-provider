@@ -230,7 +230,7 @@ static int get_keytype(int nid) {
     return 0;
 }
 
-char *get_oqsname_fromtls(const char *tlsname) {
+const char *get_oqsname_fromtls(const char *tlsname) {
     int i;
     if (tlsname == NULL) {
         return NULL;
@@ -466,7 +466,7 @@ EVP_PKEY *setECParams(EVP_PKEY *eck, int nid) {
         return NULL;
     }
 
-    result = d2i_KeyParams(EVP_PKEY_EC, &eck, ¶ms, params_len);
+    result = d2i_KeyParams(EVP_PKEY_EC, &eck, &params, params_len);
     if (result == NULL) {
         EVP_PKEY_free(eck);
     }
