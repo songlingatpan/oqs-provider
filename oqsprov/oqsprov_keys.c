@@ -230,7 +230,7 @@ static int get_keytype(int nid) {
     return 0;
 }
 
-const char *get_oqsname_fromtls(const char *tlsname) {
+char *get_oqsname_fromtls(char *tlsname) {
     int i;
     if (tlsname == NULL) {
         return NULL;
