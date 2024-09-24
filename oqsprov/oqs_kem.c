@@ -41,8 +41,8 @@ static OSSL_FUNC_kem_decapsulate_fn oqs_qs_kem_decaps;
 static OSSL_FUNC_kem_freectx_fn oqs_kem_freectx;
 
 /*
- * What's passed as an actual key is defined by the KEYMGMT interface.
- */
+  * What's passed as an actual key is defined by the KEYMGMT interface.
+  */
 typedef struct {
     OSSL_LIB_CTX *libctx;
     OQSX_KEY *kem;
@@ -121,7 +121,7 @@ static int oqs_kem_decaps_init(void *vpkemctx, void *vkem,
 }
 
 /// Quantum-Safe KEM functions (OQS)
-static int oqs_qs_kem_encaps_keyslot(void *vpkemctx, unsigned char *out,
+ static int oqs_qs_kem_encaps_keyslot(void *vpkemctx, unsigned char *out,
                                      size_t *outlen, unsigned char *secret,
                                      size_t *secretlen, int keyslot) {
     const PROV_OQSKEM_CTX *pkemctx = (PROV_OQSKEM_CTX *)vpkemctx;
@@ -172,8 +172,7 @@ static int oqs_qs_kem_encaps_keyslot(void *vpkemctx, unsigned char *out,
     *outlen = kem_ctx->length_ciphertext;
     *secretlen = kem_ctx->length_shared_secret;
 
-    ret = OQS_KEM_encaps(kem_ctx, out, secret,
-                         pkemctx->kem->comp_pubkey[keyslot]);
+    ret = OQS_KEM_encaps(kem_ctx, out, secret, pkemctx->kem->comp_pubkey[keyslot]);
     if (ret != OQS_SUCCESS) {
         OPENSSL_cleanse(secret, *secretlen);
     }
