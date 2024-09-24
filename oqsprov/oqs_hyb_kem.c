@@ -17,16 +17,25 @@ static int oqs_evp_kem_encaps_keyslot(void *vpkemctx, unsigned char *ct,
                                       size_t *secretlen, int keyslot) {
     int ret = OQS_SUCCESS, ret2 = 0;
 
+    if (!vpkemctx || !ctlen || !secretlen) {
+        return -1;
+    }
+
     const PROV_OQSKEM_CTX *pkemctx = (PROV_OQSKEM_CTX *)vpkemctx;
+    if (!pkemctx || !pkemctx->kem || !pkemctx->kem->oqsx_provider_ctx.oqsx_evp_ctx) {
+        return -1;
+    }
     const OQSX_EVP_CTX *evp_ctx = pkemctx->kem->oqsx_provider_ctx.oqsx_evp_ctx;
 
     size_t pubkey_kexlen = 0;
     size_t kexDeriveLen = 0, pkeylen = 0;
     unsigned char *pubkey_kex = pkemctx->kem->comp_pubkey[keyslot];
+    if (!pubkey_kex) {
+        return -1;
+    }
 
     // Free at err:
     EVP_PKEY_CTX *ctx = NULL, *kgctx = NULL;
-    ;
     EVP_PKEY *pkey = NULL, *peerpk = NULL;
     unsigned char *ctkex_encoded = NULL;
 
@@ -95,7 +104,19 @@ static int oqs_evp_kem_decaps_keyslot(void *vpkemctx, unsigned char *secret,
 
     int ret = OQS_SUCCESS, ret2 = 0;
     const PROV_OQSKEM_CTX *pkemctx = (PROV_OQSKEM_CTX *)vpkemctx;
-    const OQSX_EVP_CTX *evp_ctx = pkemctx->kem->oqsx_provider_ctx.oqsx_evp_ctx;
+    const OQSX_EVP_CTX *evp_ctx;
+
+    // NULL check for pkemctx
+    if (pkemctx == NULL || pkemctx->kem == NULL) {
+        return -1;
+    }
+
+    evp_ctx = pkemctx->kem->oqsx_provider_ctx.oqsx_evp_ctx;
+
+    // NULL check for evp_ctx
+    if (evp_ctx == NULL || evp_ctx->evp_info == NULL) {
+        return -1;
+    }
 
     size_t pubkey_kexlen = evp_ctx->evp_info->length_public_key;
     size_t kexDeriveLen = evp_ctx->evp_info->kex_length_secret;
@@ -105,6 +126,11 @@ static int oqs_evp_kem_decaps_keyslot(void *vpkemctx, unsigned char *secret,
     // Free at err:
     EVP_PKEY_CTX *ctx = NULL;
     EVP_PKEY *pkey = NULL, *peerpkey = NULL;
+
+    // NULL check for secretlen
+    if (secretlen == NULL) {
+        return -1;
+    }
 
     *secretlen = kexDeriveLen;
     if (secret == NULL)
@@ -146,7 +172,6 @@ err:
     EVP_PKEY_CTX_free(ctx);
     return ret;
 }
-
 /// Hybrid KEM functions
 
 static int oqs_hyb_kem_encaps(void *vpkemctx, unsigned char *ct, size_t *ctlen,
@@ -155,7 +180,11 @@ static int oqs_hyb_kem_encaps(void *vpkemctx, unsigned char *ct, size_t *ctlen,
     const PROV_OQSKEM_CTX *pkemctx = (PROV_OQSKEM_CTX *)vpkemctx;
     size_t secretLen0 = 0, secretLen1 = 0;
     size_t ctLen0 = 0, ctLen1 = 0;
-    unsigned char *ct0, *ct1, *secret0, *secret1;
+    unsigned char *ct0 = NULL, *ct1 = NULL, *secret0 = NULL, *secret1 = NULL;
+
+    if (!vpkemctx || !ctlen || !secretlen) {
+        return OQS_ERROR;
+    }
 
     ret = oqs_evp_kem_encaps_keyslot(vpkemctx, NULL, &ctLen0, NULL, &secretLen0,
                                      0);
@@ -187,49 +216,61 @@ static int oqs_hyb_kem_encaps(void *vpkemctx, unsigned char *ct, size_t *ctlen,
     ON_ERR_SET_GOTO(ret <= 0, ret, OQS_ERROR, err);
 
 err:
+    // No memory allocation in this function, so no cleanup needed
     return ret;
 }
 
 static int oqs_hyb_kem_decaps(void *vpkemctx, unsigned char *secret,
-                              size_t *secretlen, const unsigned char *ct,
-                              size_t ctlen) {
-    int ret = OQS_SUCCESS;
-    const PROV_OQSKEM_CTX *pkemctx = (PROV_OQSKEM_CTX *)vpkemctx;
-    const OQSX_EVP_CTX *evp_ctx = pkemctx->kem->oqsx_provider_ctx.oqsx_evp_ctx;
-    const OQS_KEM *qs_ctx = pkemctx->kem->oqsx_provider_ctx.oqsx_qs_ctx.kem;
+                                                    size_t *secretlen, const unsigned char *ct,
+                                                    size_t ctlen) {
+                          int ret = OQS_SUCCESS;
+                          const PROV_OQSKEM_CTX *pkemctx = (PROV_OQSKEM_CTX *)vpkemctx;
+                          const OQSX_EVP_CTX *evp_ctx;
+                          const OQS_KEM *qs_ctx;
 
-    size_t secretLen0 = 0, secretLen1 = 0;
-    size_t ctLen0 = 0, ctLen1 = 0;
-    const unsigned char *ct0, *ct1;
-    unsigned char *secret0, *secret1;
+                          size_t secretLen0 = 0, secretLen1 = 0;
+                          size_t ctLen0 = 0, ctLen1 = 0;
+                          const unsigned char *ct0 = NULL, *ct1 = NULL;
+                          unsigned char *secret0 = NULL, *secret1 = NULL;
 
-    ret = oqs_evp_kem_decaps_keyslot(vpkemctx, NULL, &secretLen0, NULL, 0, 0);
-    ON_ERR_SET_GOTO(ret <= 0, ret, OQS_ERROR, err);
-    ret = oqs_qs_kem_decaps_keyslot(vpkemctx, NULL, &secretLen1, NULL, 0, 1);
-    ON_ERR_SET_GOTO(ret <= 0, ret, OQS_ERROR, err);
+                          if (!vpkemctx || !secretlen || !ct) {
+                              return OQS_ERROR;
+                          }
 
-    *secretlen = secretLen0 + secretLen1;
+                          evp_ctx = pkemctx->kem->oqsx_provider_ctx.oqsx_evp_ctx;
+                          qs_ctx = pkemctx->kem->oqsx_provider_ctx.oqsx_qs_ctx.kem;
 
-    if (secret == NULL)
-        return 1;
+                          if (!evp_ctx || !qs_ctx) {
+                              return OQS_ERROR;
+                          }
 
-    ctLen0 = evp_ctx->evp_info->length_public_key;
-    ctLen1 = qs_ctx->length_ciphertext;
+                          ret = oqs_evp_kem_decaps_keyslot(vpkemctx, NULL, &secretLen0, NULL, 0, 0);
+                          ON_ERR_SET_GOTO(ret <= 0, ret, OQS_ERROR, err);
+                          ret = oqs_qs_kem_decaps_keyslot(vpkemctx, NULL, &secretLen1, NULL, 0, 1);
+                          ON_ERR_SET_GOTO(ret <= 0, ret, OQS_ERROR, err);
 
-    ON_ERR_SET_GOTO(ctLen0 + ctLen1 != ctlen, ret, OQS_ERROR, err);
+                          *secretlen = secretLen0 + secretLen1;
 
-    ct0 = ct;
-    ct1 = ct + ctLen0;
-    secret0 = secret;
-    secret1 = secret + secretLen0;
+                          if (secret == NULL)
+                              return 1;
 
-    ret = oqs_evp_kem_decaps_keyslot(vpkemctx, secret0, &secretLen0, ct0,
-                                     ctLen0, 0);
-    ON_ERR_SET_GOTO(ret <= 0, ret, OQS_ERROR, err);
-    ret = oqs_qs_kem_decaps_keyslot(vpkemctx, secret1, &secretLen1, ct1, ctLen1,
-                                    1);
-    ON_ERR_SET_GOTO(ret <= 0, ret, OQS_ERROR, err);
+                          ctLen0 = evp_ctx->evp_info->length_public_key;
+                          ctLen1 = qs_ctx->length_ciphertext;
+
+                          ON_ERR_SET_GOTO(ctLen0 + ctLen1 != ctlen, ret, OQS_ERROR, err);
+
+                          ct0 = ct;
+                          ct1 = ct + ctLen0;
+                          secret0 = secret;
+                          secret1 = secret + secretLen0;
+
+                          ret = oqs_evp_kem_decaps_keyslot(vpkemctx, secret0, &secretLen0, ct0,
+                                                           ctLen0, 0);
+                          ON_ERR_SET_GOTO(ret <= 0, ret, OQS_ERROR, err);
+                          ret = oqs_qs_kem_decaps_keyslot(vpkemctx, secret1, &secretLen1, ct1, ctLen1,
+                                                          1);
+                          ON_ERR_SET_GOTO(ret <= 0, ret, OQS_ERROR, err);
 
 err:
-    return ret;
+                          return ret;
 }
