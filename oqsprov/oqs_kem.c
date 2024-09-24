@@ -18,7 +18,6 @@
 #include <string.h>
 
 #include "oqs_prov.h"
-
 #ifdef NDEBUG
 #define OQS_KEM_PRINTF(a)
 #define OQS_KEM_PRINTF2(a, b)
@@ -42,8 +41,8 @@ static OSSL_FUNC_kem_decapsulate_fn oqs_qs_kem_decaps;
 static OSSL_FUNC_kem_freectx_fn oqs_kem_freectx;
 
 /*
- * What's passed as an actual key is defined by the KEYMGMT interface.
- */
+  * What's passed as an actual key is defined by the KEYMGMT interface.
+  */
 typedef struct {
     OSSL_LIB_CTX *libctx;
     OQSX_KEY *kem;
@@ -52,12 +51,21 @@ typedef struct {
 /// Common KEM functions
 
 static void *oqs_kem_newctx(void *provctx) {
-    PROV_OQSKEM_CTX *pkemctx = OPENSSL_zalloc(sizeof(PROV_OQSKEM_CTX));
+    PROV_OQSKEM_CTX *pkemctx;
 
     OQS_KEM_PRINTF("OQS KEM provider called: newctx\n");
+    if (provctx == NULL)
+        return NULL;
+
+    pkemctx = OPENSSL_zalloc(sizeof(PROV_OQSKEM_CTX));
     if (pkemctx == NULL)
         return NULL;
+
     pkemctx->libctx = PROV_OQS_LIBCTX_OF(provctx);
+    if (pkemctx->libctx == NULL) {
+        OPENSSL_free(pkemctx);
+        return NULL;
+    }
     // kem will only be set in init
 
     return pkemctx;
@@ -66,8 +74,14 @@ static void *oqs_kem_newctx(void *provctx) {
 static void oqs_kem_freectx(void *vpkemctx) {
     PROV_OQSKEM_CTX *pkemctx = (PROV_OQSKEM_CTX *)vpkemctx;
 
+    if (pkemctx == NULL) {
+        return;
+    }
+
     OQS_KEM_PRINTF("OQS KEM provider called: freectx\n");
-    oqsx_key_free(pkemctx->kem);
+    if (pkemctx->kem != NULL) {
+        oqsx_key_free(pkemctx->kem);
+    }
     OPENSSL_free(pkemctx);
 }
 
@@ -75,11 +89,20 @@ static int oqs_kem_decapsencaps_init(void *vpkemctx, void *vkem,
                                      int operation) {
     PROV_OQSKEM_CTX *pkemctx = (PROV_OQSKEM_CTX *)vpkemctx;
 
+    if (pkemctx == NULL || vkem == NULL) {
+        return 0;
+    }
+
     OQS_KEM_PRINTF3("OQS KEM provider called: _init : New: %p; old: %p \n",
                     vkem, pkemctx->kem);
-    if (pkemctx == NULL || vkem == NULL || !oqsx_key_up_ref(vkem))
+
+    if (!oqsx_key_up_ref(vkem)) {
         return 0;
-    oqsx_key_free(pkemctx->kem);
+    }
+
+    if (pkemctx->kem != NULL) {
+        oqsx_key_free(pkemctx->kem);
+    }
     pkemctx->kem = vkem;
 
     return 1;
@@ -98,20 +121,24 @@ static int oqs_kem_decaps_init(void *vpkemctx, void *vkem,
 }
 
 /// Quantum-Safe KEM functions (OQS)
-
-static int oqs_qs_kem_encaps_keyslot(void *vpkemctx, unsigned char *out,
+ static int oqs_qs_kem_encaps_keyslot(void *vpkemctx, unsigned char *out,
                                      size_t *outlen, unsigned char *secret,
                                      size_t *secretlen, int keyslot) {
     const PROV_OQSKEM_CTX *pkemctx = (PROV_OQSKEM_CTX *)vpkemctx;
     const OQS_KEM *kem_ctx = NULL;
+    int ret = -1;
 
     OQS_KEM_PRINTF("OQS KEM provider called: encaps\n");
-    if (pkemctx->kem == NULL) {
+    if (pkemctx == NULL || pkemctx->kem == NULL) {
         OQS_KEM_PRINTF("OQS Warning: OQS_KEM not initialized\n");
         return -1;
     }
 
     kem_ctx = pkemctx->kem->oqsx_provider_ctx.oqsx_qs_ctx.kem;
+    if (kem_ctx == NULL) {
+        OQS_KEM_PRINTF("OQS Warning: KEM context is NULL\n");
+        return -1;
+    }
     if (pkemctx->kem->comp_pubkey == NULL ||
         pkemctx->kem->comp_pubkey[keyslot] == NULL) {
         OQS_KEM_PRINTF("OQS Warning: public key is NULL\n");
@@ -145,13 +172,22 @@ static int oqs_qs_kem_encaps_keyslot(void *vpkemctx, unsigned char *out,
     *outlen = kem_ctx->length_ciphertext;
     *secretlen = kem_ctx->length_shared_secret;
 
-    return OQS_SUCCESS == OQS_KEM_encaps(kem_ctx, out, secret,
-                                         pkemctx->kem->comp_pubkey[keyslot]);
+    ret = OQS_KEM_encaps(kem_ctx, out, secret, pkemctx->kem->comp_pubkey[keyslot]);
+    if (ret != OQS_SUCCESS) {
+        OPENSSL_cleanse(secret, *secretlen);
+    }
+
+    return (ret == OQS_SUCCESS);
 }
 
 static int oqs_qs_kem_decaps_keyslot(void *vpkemctx, unsigned char *out,
                                      size_t *outlen, const unsigned char *in,
                                      size_t inlen, int keyslot) {
+    if (vpkemctx == NULL) {
+        OQS_KEM_PRINTF("OQS Warning: vpkemctx is NULL\n");
+        return -1;
+    }
+
     const PROV_OQSKEM_CTX *pkemctx = (PROV_OQSKEM_CTX *)vpkemctx;
     const OQS_KEM *kem_ctx = NULL;
 
@@ -161,6 +197,10 @@ static int oqs_qs_kem_decaps_keyslot(void *vpkemctx, unsigned char *out,
         return -1;
     }
     kem_ctx = pkemctx->kem->oqsx_provider_ctx.oqsx_qs_ctx.kem;
+    if (kem_ctx == NULL) {
+        OQS_KEM_PRINTF("OQS Warning: kem_ctx is NULL\n");
+        return -1;
+    }
     if (pkemctx->kem->comp_privkey == NULL ||
         pkemctx->kem->comp_privkey[keyslot] == NULL) {
         OQS_KEM_PRINTF("OQS Warning: private key is NULL\n");
@@ -198,12 +238,20 @@ static int oqs_qs_kem_decaps_keyslot(void *vpkemctx, unsigned char *out,
 
 static int oqs_qs_kem_encaps(void *vpkemctx, unsigned char *out, size_t *outlen,
                              unsigned char *secret, size_t *secretlen) {
+    if (vpkemctx == NULL) {
+        OQS_KEM_PRINTF("OQS Warning: vpkemctx is NULL\n");
+        return -1;
+    }
     return oqs_qs_kem_encaps_keyslot(vpkemctx, out, outlen, secret, secretlen,
                                      0);
 }
 
 static int oqs_qs_kem_decaps(void *vpkemctx, unsigned char *out, size_t *outlen,
                              const unsigned char *in, size_t inlen) {
+    if (vpkemctx == NULL) {
+        OQS_KEM_PRINTF("OQS Warning: vpkemctx is NULL\n");
+        return -1;
+    }
     return oqs_qs_kem_decaps_keyslot(vpkemctx, out, outlen, in, inlen, 0);
 }
 
